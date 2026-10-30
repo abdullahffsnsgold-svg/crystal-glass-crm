@@ -54,7 +54,7 @@ export default function HistoryPage() {
       0,
     );
 
-    return itemsPriceSum - Number(order.paid_amount || 0);
+    return Math.max(itemsPriceSum - Number(order.paid_amount || 0), 0);
   };
 
   const loadHistory = async () => {

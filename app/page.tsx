@@ -96,8 +96,8 @@ export default function Home() {
         if (order.is_done) return false;
 
         return (
-          order.client_name.toLowerCase().includes(query) ||
-          order.client_phone.toLowerCase().includes(query)
+          (order.client_name || "").toLowerCase().includes(query) ||
+          (order.client_phone || "").toLowerCase().includes(query)
         );
       })
       .sort((a, b) => Number(b.is_urgent) - Number(a.is_urgent));
@@ -172,7 +172,7 @@ export default function Home() {
             <div>
               <h2 className="text-xl font-black text-slate-900">Заказы</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Список заказов по текущему магазину
+                Заказы в работе — нажмите «Готово», когда заказ выполнен
               </p>
             </div>
             <button

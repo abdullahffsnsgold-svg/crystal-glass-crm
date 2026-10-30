@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import { Order } from "@/app/order";
 import { Trash2, Pencil, Banknote, CreditCard } from "lucide-react";
@@ -17,6 +18,7 @@ export default function OrderCard({ order, onUpdate, onEdit }: Props) {
   const [method, setMethod] = useState<"cash" | "card" | null>(null);
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
+  const submitting = useRef(false);
 
   // ================= TOTAL =================
   const total = useMemo(() => {
@@ -32,7 +34,11 @@ export default function OrderCard({ order, onUpdate, onEdit }: Props) {
   const entered = Number(amount || 0);
 
   // ================= WHATSAPP =================
-  const sendWhatsApp = () => {
+  // окно открываем сразу по клику, иначе после await браузер его блокирует
+  const openWhatsAppWindow = (): Window | null =>
+    order.client_phone?.replace(/\D/g, "") ? window.open("", "_blank") : null;
+
+  const sendWhatsApp = (win: Window | null = null) => {
     const items =
       order.order_items
         ?.map(
@@ -59,10 +65,13 @@ ${items}
       phone = "996" + phone.slice(1);
     }
 
-    window.open(
-      `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
-      "_blank",
-    );
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+
+    if (win && !win.closed) {
+      win.location.href = url;
+    } else {
+      window.open(url, "_blank");
+    }
   };
 
   // ================= PAYMENT =================
@@ -72,49 +81,60 @@ ${items}
     setPayOpen(true);
   };
 
-  const completeOrder = async (payAmount: number) => {
-    if (loading) return;
+  const completeOrder = async (
+    payAmount: number,
+    waWindow: Window | null = null,
+  ) => {
+    // ref, а не state: защита от двойного клика до перерисовки
+    if (submitting.current) return;
+    submitting.current = true;
     setLoading(true);
 
-    if (payAmount > 0) {
-      const { error: payError } = await supabase
-        .from("payments")
-        .insert({ order_id: order.id, amount: payAmount });
+    try {
+      if (payAmount > 0) {
+        const { error: payError } = await supabase
+          .from("payments")
+          .insert({ order_id: order.id, amount: payAmount });
 
-      if (payError) {
-        toast.error("Ошибка при сохранении оплаты");
-        setLoading(false);
+        if (payError) {
+          waWindow?.close();
+          toast.error("Ошибка при сохранении оплаты");
+          return;
+        }
+      }
+
+      const newPaid = paid + payAmount;
+
+      const { error } = await supabase
+        .from("orders")
+        .update({ is_done: true, paid_amount: newPaid })
+        .eq("id", order.id);
+
+      if (error) {
+        waWindow?.close();
+        // платёж уже записан, поэтому показываем реальное состояние
+        toast.error("Оплата сохранена, но заказ не закрылся");
+        onUpdate();
         return;
       }
-    }
 
-    const newPaid = paid + payAmount;
+      const left = Math.max(total - newPaid, 0);
 
-    const { error } = await supabase
-      .from("orders")
-      .update({ is_done: true, paid_amount: newPaid })
-      .eq("id", order.id);
+      if (left > 0) {
+        toast(`Заказ закрыт, остаток ${left.toLocaleString()} c`);
+      } else {
+        toast.success("Заказ закрыт и оплачен");
+      }
 
-    if (error) {
-      toast.error("Не удалось завершить заказ");
+      setPayOpen(false);
+      setMethod(null);
+      setAmount("");
+      onUpdate();
+      sendWhatsApp(waWindow);
+    } finally {
+      submitting.current = false;
       setLoading(false);
-      return;
     }
-
-    const left = Math.max(total - newPaid, 0);
-
-    if (left > 0) {
-      toast(`Заказ закрыт, остаток ${left.toLocaleString()} c`);
-    } else {
-      toast.success("Заказ закрыт и оплачен");
-    }
-
-    sendWhatsApp();
-    setPayOpen(false);
-    setMethod(null);
-    setAmount("");
-    setLoading(false);
-    onUpdate();
   };
 
   const handleCardSubmit = () => {
@@ -123,27 +143,31 @@ ${items}
       return;
     }
 
-    void completeOrder(entered);
+    void completeOrder(entered, openWhatsAppWindow());
   };
 
   // ================= REOPEN =================
   const reopenOrder = async () => {
-    if (loading) return;
+    if (submitting.current) return;
+    submitting.current = true;
     setLoading(true);
 
-    const { error } = await supabase
-      .from("orders")
-      .update({ is_done: false })
-      .eq("id", order.id);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ is_done: false })
+        .eq("id", order.id);
 
-    if (error) {
-      toast.error("Не удалось вернуть заказ");
-    } else {
-      toast.success("Заказ возвращён в работу");
-      onUpdate();
+      if (error) {
+        toast.error("Не удалось вернуть заказ");
+      } else {
+        toast.success("Заказ возвращён в работу");
+        onUpdate();
+      }
+    } finally {
+      submitting.current = false;
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   // ================= DELETE =================
@@ -296,9 +320,11 @@ ${items}
         </div>
       </div>
 
-      {/* PAYMENT MODAL */}
-      {payOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      {/* PAYMENT MODAL — портал, иначе карточка с transform ломает fixed */}
+      {payOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           {/* BACKDROP */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -337,7 +363,9 @@ ${items}
               <div className="mt-5 grid gap-3">
                 <button
                   type="button"
-                  onClick={() => void completeOrder(remaining)}
+                  onClick={() =>
+                    void completeOrder(remaining, openWhatsAppWindow())
+                  }
                   disabled={loading}
                   className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3 font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60"
                 >
@@ -410,8 +438,9 @@ ${items}
               </div>
             )}
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </div>
   );
 }

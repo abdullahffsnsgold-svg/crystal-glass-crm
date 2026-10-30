@@ -88,6 +88,8 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
+    if (loading) return;
+
     const shopId = await getShopId();
 
     if (!shopId) {
@@ -131,7 +133,11 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
     );
 
     if (itemsError) {
-      toast.error("Заказ создан, но позиции не сохранились");
+      // без позиций заказ бессмысленен, а пустая карточка висела бы в списке
+      await supabase.from("orders").delete().eq("id", order.id);
+      toast.error("Не удалось сохранить позиции — заказ не создан");
+      setLoading(false);
+      return;
     }
 
     setLoading(false);
