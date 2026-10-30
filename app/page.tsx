@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, type ElementType } from "react";
 import { motion } from "framer-motion";
 import { ClipboardList, History, Plus, Search, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { getShopId } from "@/lib/shop";
 import OrderCard from "@/components/OrderCard";
 import OrderForm from "@/components/OrderForm";
 import SlideOutMenu from "@/components/SlideOutMenu";
@@ -45,8 +44,6 @@ export default function Home() {
   const isFetched = useRef(false);
 
   const loadData = async () => {
-    const shopId = await getShopId();
-
     const { data, error } = await supabase
       .from("orders")
       .select("*, order_items(*), payments(*)");
@@ -56,12 +53,7 @@ export default function Home() {
       return;
     }
 
-    const rows = data ?? [];
-    const filtered = shopId
-      ? rows.filter((order) => String(order.shop_id) === String(shopId))
-      : rows;
-
-    setOrders(filtered as Order[]);
+    setOrders((data ?? []) as Order[]);
   };
 
   useEffect(() => {

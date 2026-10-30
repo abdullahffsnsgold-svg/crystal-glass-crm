@@ -13,7 +13,6 @@ import {
   Wallet,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { getShopId } from "@/lib/shop";
 import OrderCard from "@/components/OrderCard";
 import SlideOutMenu from "@/components/SlideOutMenu";
 import type { Order } from "../order";
@@ -59,16 +58,10 @@ export default function HistoryPage() {
   };
 
   const loadHistory = async () => {
-    const shopId = await getShopId();
-
-    const query = supabase
+    const { data, error } = await supabase
       .from("orders")
       .select("*, order_items(*), payments(*)")
       .order("created_at", { ascending: false });
-
-    const { data, error } = shopId
-      ? await query.eq("shop_id", shopId)
-      : await query;
 
     if (error) {
       console.error("Ошибка загрузки истории:", error);
