@@ -12,6 +12,7 @@ import {
   Plus,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { getShopId } from "@/lib/shop";
 import OrderCard from "@/components/OrderCard";
 import SlideOutMenu from "@/components/SlideOutMenu";
 import type { Order } from "../order";
@@ -63,14 +64,16 @@ export default function DebtsPage() {
   };
 
   const loadDebts = async () => {
-    const shopId = localStorage.getItem("shop_id");
-    if (!shopId) return;
+    const shopId = await getShopId();
 
-    const { data, error } = await supabase
+    const query = supabase
       .from("orders")
       .select("*, order_items(*), payments(*)")
-      .eq("shop_id", shopId)
       .order("created_at", { ascending: false });
+
+    const { data, error } = shopId
+      ? await query.eq("shop_id", shopId)
+      : await query;
 
     if (error) {
       console.error(error);
@@ -117,8 +120,6 @@ export default function DebtsPage() {
 
   const debtors = useMemo(() => {
     return orders.filter((order) => {
-      if (order.is_done) return false;
-
       const debt = getDebt(order);
       if (debt <= 0) return false;
 

@@ -1,8 +1,9 @@
+import type { Metadata } from "next";
+import { Toaster } from "react-hot-toast";
 import "./globals.css";
-import LoginGate from "@/components/LoginGate";
 
 // Это "правильный" способ для Next.js, чтобы подключить манифест
-export const metadata = {
+export const metadata: Metadata = {
   manifest: "/manifest.json",
   title: "Crystal Glass CRM",
   description: "CRM система",
@@ -23,7 +24,8 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="Crystal Glass" />
       </head>
       <body>
-        <LoginGate>{children}</LoginGate>
+        <Toaster position="top-center" />
+        {children}
       </body>
     </html>
   );

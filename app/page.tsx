@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ElementType } from "react";
 import { motion } from "framer-motion";
 import { ClipboardList, History, Plus, Search, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { getShopId } from "@/lib/shop";
 import OrderCard from "@/components/OrderCard";
 import OrderForm from "@/components/OrderForm";
 import SlideOutMenu from "@/components/SlideOutMenu";
@@ -43,14 +44,8 @@ export default function Home() {
 
   const isFetched = useRef(false);
 
-  const handleLogout = () => {
-    localStorage.removeItem("shop_id");
-    window.location.assign("/");
-  };
-
   const loadData = async () => {
-    const shopId = localStorage.getItem("shop_id");
-    if (!shopId) return;
+    const shopId = await getShopId();
 
     const { data, error } = await supabase
       .from("orders")
@@ -61,11 +56,12 @@ export default function Home() {
       return;
     }
 
-    const filtered = (data ?? []).filter(
-      (order) => String(order.shop_id) === String(shopId),
-    ) as Order[];
+    const rows = data ?? [];
+    const filtered = shopId
+      ? rows.filter((order) => String(order.shop_id) === String(shopId))
+      : rows;
 
-    setOrders(filtered);
+    setOrders(filtered as Order[]);
   };
 
   useEffect(() => {
@@ -120,7 +116,7 @@ export default function Home() {
       <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/75 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
-            <SlideOutMenu onNewOrder={() => setIsModalOpen(true)} onLogout={handleLogout} />
+            <SlideOutMenu onNewOrder={() => setIsModalOpen(true)} />
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-linear-to-br from-blue-600 to-cyan-500 shadow-lg shadow-blue-500/25">
               <ClipboardList size={22} className="text-white" />
             </div>

@@ -1,6 +1,7 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  reactStrictMode: false, // Отключаем, чтобы убрать ложные ошибки ререндера
-}
+import type { NextConfig } from "next";
 
-module.exports = nextConfig
+const nextConfig: NextConfig = {
+  reactStrictMode: false, // Отключаем, чтобы убрать ложные ошибки ререндера
+};
+
+export default nextConfig;

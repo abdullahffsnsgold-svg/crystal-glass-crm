@@ -7,7 +7,6 @@ import {
   ClipboardList,
   History as HistoryIcon,
   Home,
-  LogOut,
   Menu,
   Plus,
   Wallet,
@@ -17,13 +16,11 @@ import { useEffect, useState } from "react";
 
 interface SlideOutMenuProps {
   onNewOrder?: () => void;
-  onLogout?: () => void;
   title?: string;
 }
 
 export default function SlideOutMenu({
   onNewOrder,
-  onLogout,
   title = "Crystal Glass",
 }: SlideOutMenuProps) {
   const pathname = usePathname();
@@ -47,10 +44,6 @@ export default function SlideOutMenu({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
-
-  useEffect(() => {
-    setIsOpen(false);
-  }, [pathname]);
 
   const navItems = [
     { href: "/", label: "Главная", icon: Home },
@@ -153,22 +146,6 @@ export default function SlideOutMenu({
                   >
                     <Plus size={18} />
                     Новый заказ
-                  </motion.button>
-                ) : null}
-
-                {onLogout ? (
-                  <motion.button
-                    whileHover={{ scale: 1.01, y: -1 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      closeMenu();
-                      onLogout();
-                    }}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700"
-                    type="button"
-                  >
-                    <LogOut size={18} />
-                    Выйти
                   </motion.button>
                 ) : null}
               </div>

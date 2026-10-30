@@ -13,6 +13,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { getShopId } from "@/lib/shop";
 import OrderCard from "@/components/OrderCard";
 import SlideOutMenu from "@/components/SlideOutMenu";
 import type { Order } from "../order";
@@ -26,6 +27,7 @@ interface Payment {
 interface OrderItem {
   id: number;
   price: number | string;
+  quantity?: number;
 }
 
 type HistoryOrder = Order & {
@@ -48,26 +50,25 @@ export default function HistoryPage() {
 
   const calculateRemaining = (order: HistoryOrder): number => {
     const itemsPriceSum = (order.order_items || []).reduce(
-      (sum, item) => sum + Number(item.price || 0),
+      (sum, item) =>
+        sum + Number(item.price || 0) * Number(item.quantity || 1),
       0,
     );
 
-    return (
-      itemsPriceSum +
-      Number(order.total_price || 0) -
-      Number(order.paid_amount || 0)
-    );
+    return itemsPriceSum - Number(order.paid_amount || 0);
   };
 
   const loadHistory = async () => {
-    const shopId = localStorage.getItem("shop_id");
-    if (!shopId) return;
+    const shopId = await getShopId();
 
-    const { data, error } = await supabase
+    const query = supabase
       .from("orders")
       .select("*, order_items(*), payments(*)")
-      .eq("shop_id", shopId)
       .order("created_at", { ascending: false });
+
+    const { data, error } = shopId
+      ? await query.eq("shop_id", shopId)
+      : await query;
 
     if (error) {
       console.error("Ошибка загрузки истории:", error);
@@ -295,7 +296,7 @@ export default function HistoryPage() {
                           >
                             <span>{formatDate(payment.created_at)}</span>
                             <span className="font-bold text-slate-900">
-                              {payment.amount.toLocaleString()} c
+                              {Number(payment.amount).toLocaleString()} c
                             </span>
                           </div>
                         ))
