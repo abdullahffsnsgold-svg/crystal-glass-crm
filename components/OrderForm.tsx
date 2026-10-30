@@ -90,16 +90,18 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
 
     if (loading) return;
 
+    // снимаем данные формы до await: React обнуляет e.currentTarget после обработчика
+    const formData = new FormData(e.currentTarget);
+
+    setLoading(true);
+
     const shopId = await getShopId();
 
     if (!shopId) {
       toast.error("Не удалось определить магазин");
+      setLoading(false);
       return;
     }
-
-    setLoading(true);
-
-    const formData = new FormData(e.currentTarget);
 
     const { data: order, error } = await supabase
       .from("orders")
