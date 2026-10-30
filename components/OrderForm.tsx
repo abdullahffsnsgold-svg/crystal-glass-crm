@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Sparkles, Trash2, X } from "lucide-react";
 import { PatternFormat } from "react-number-format";
+import toast from "react-hot-toast";
 import { supabase } from "@/lib/supabase";
+import { getShopId } from "@/lib/shop";
 
 interface GlassItem {
   glass_id: string;
@@ -86,9 +88,12 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    const shopId = localStorage.getItem("shop_id");
+    const shopId = await getShopId();
 
-    if (!shopId) return;
+    if (!shopId) {
+      toast.error("Не удалось определить магазин");
+      return;
+    }
 
     setLoading(true);
 
@@ -107,11 +112,12 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
       .single();
 
     if (!order || error) {
+      toast.error("Не удалось создать заказ");
       setLoading(false);
       return;
     }
 
-    await supabase.from("order_items").insert(
+    const { error: itemsError } = await supabase.from("order_items").insert(
       items.map((i) => ({
         order_id: order.id,
         glass_type:
@@ -123,6 +129,10 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
         price: i.price,
       })),
     );
+
+    if (itemsError) {
+      toast.error("Заказ создан, но позиции не сохранились");
+    }
 
     setLoading(false);
     onClose();

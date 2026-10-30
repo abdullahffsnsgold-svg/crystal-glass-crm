@@ -63,13 +63,9 @@ export default function DebtsPage() {
   };
 
   const loadDebts = async () => {
-    const shopId = localStorage.getItem("shop_id");
-    if (!shopId) return;
-
     const { data, error } = await supabase
       .from("orders")
       .select("*, order_items(*), payments(*)")
-      .eq("shop_id", shopId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -117,8 +113,6 @@ export default function DebtsPage() {
 
   const debtors = useMemo(() => {
     return orders.filter((order) => {
-      if (order.is_done) return false;
-
       const debt = getDebt(order);
       if (debt <= 0) return false;
 
