@@ -14,6 +14,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import OrderCard from "@/components/OrderCard";
 import SlideOutMenu from "@/components/SlideOutMenu";
+import toast from "react-hot-toast";
 import type { Order } from "../order";
 
 interface Payment {
@@ -41,6 +42,7 @@ export default function DebtsPage() {
     {},
   ); // Состояние для инпутов
   const isLoaded = useRef(false);
+  const paying = useRef(false);
 
   const formatDate = (date: string) =>
     new Date(date).toLocaleDateString("ru-RU", {
@@ -79,29 +81,51 @@ export default function DebtsPage() {
   };
 
   const handlePayment = async (order: DebtOrder) => {
-    const amount = Number(paymentInputs[order.id]);
-    if (!amount || amount <= 0) return;
+    if (paying.current) return;
 
-    // 1. Добавляем запись в таблицу платежей
-    const { error: payError } = await supabase
-      .from("payments")
-      .insert({ order_id: order.id, amount: amount });
+    const debt = getDebt(order);
+    // больше остатка внести нельзя, иначе paid_amount уйдёт в переплату
+    const amount = Math.min(Math.round(Number(paymentInputs[order.id])), debt);
 
-    if (payError) {
-      alert("Ошибка при сохранении оплаты");
+    if (!amount || amount <= 0) {
+      toast.error("Введите сумму оплаты");
       return;
     }
 
-    // 2. Обновляем общую сумму оплат в заказе
-    const newPaidAmount = (Number(order.paid_amount) || 0) + amount;
-    await supabase
-      .from("orders")
-      .update({ paid_amount: newPaidAmount })
-      .eq("id", order.id);
+    paying.current = true;
 
-    // 3. Очищаем инпут и обновляем список
-    setPaymentInputs((prev) => ({ ...prev, [order.id]: "" }));
-    await loadDebts();
+    try {
+      const { error: payError } = await supabase
+        .from("payments")
+        .insert({ order_id: order.id, amount });
+
+      if (payError) {
+        toast.error("Ошибка при сохранении оплаты");
+        return;
+      }
+
+      const newPaidAmount = (Number(order.paid_amount) || 0) + amount;
+
+      const { error: updateError } = await supabase
+        .from("orders")
+        .update({ paid_amount: newPaidAmount })
+        .eq("id", order.id);
+
+      if (updateError) {
+        toast.error("Оплата сохранена, но заказ не обновился");
+      } else if (debt - amount <= 0) {
+        toast.success("Долг закрыт полностью");
+      } else {
+        toast.success(
+          `Оплачено ${amount.toLocaleString()} c, остаток ${(debt - amount).toLocaleString()} c`,
+        );
+      }
+
+      setPaymentInputs((prev) => ({ ...prev, [order.id]: "" }));
+      await loadDebts();
+    } finally {
+      paying.current = false;
+    }
   };
 
   useEffect(() => {

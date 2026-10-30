@@ -34,7 +34,11 @@ export default function OrderCard({ order, onUpdate, onEdit }: Props) {
   const entered = Number(amount || 0);
 
   // ================= WHATSAPP =================
-  const sendWhatsApp = () => {
+  // окно открываем сразу по клику, иначе после await браузер его блокирует
+  const openWhatsAppWindow = (): Window | null =>
+    order.client_phone?.replace(/\D/g, "") ? window.open("", "_blank") : null;
+
+  const sendWhatsApp = (win: Window | null = null) => {
     const items =
       order.order_items
         ?.map(
@@ -61,10 +65,13 @@ ${items}
       phone = "996" + phone.slice(1);
     }
 
-    window.open(
-      `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
-      "_blank",
-    );
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+
+    if (win && !win.closed) {
+      win.location.href = url;
+    } else {
+      window.open(url, "_blank");
+    }
   };
 
   // ================= PAYMENT =================
@@ -74,7 +81,10 @@ ${items}
     setPayOpen(true);
   };
 
-  const completeOrder = async (payAmount: number) => {
+  const completeOrder = async (
+    payAmount: number,
+    waWindow: Window | null = null,
+  ) => {
     // ref, а не state: защита от двойного клика до перерисовки
     if (submitting.current) return;
     submitting.current = true;
@@ -87,6 +97,7 @@ ${items}
           .insert({ order_id: order.id, amount: payAmount });
 
         if (payError) {
+          waWindow?.close();
           toast.error("Ошибка при сохранении оплаты");
           return;
         }
@@ -100,6 +111,7 @@ ${items}
         .eq("id", order.id);
 
       if (error) {
+        waWindow?.close();
         // платёж уже записан, поэтому показываем реальное состояние
         toast.error("Оплата сохранена, но заказ не закрылся");
         onUpdate();
@@ -118,7 +130,7 @@ ${items}
       setMethod(null);
       setAmount("");
       onUpdate();
-      sendWhatsApp();
+      sendWhatsApp(waWindow);
     } finally {
       submitting.current = false;
       setLoading(false);
@@ -131,7 +143,7 @@ ${items}
       return;
     }
 
-    void completeOrder(entered);
+    void completeOrder(entered, openWhatsAppWindow());
   };
 
   // ================= REOPEN =================
@@ -351,7 +363,9 @@ ${items}
               <div className="mt-5 grid gap-3">
                 <button
                   type="button"
-                  onClick={() => void completeOrder(remaining)}
+                  onClick={() =>
+                    void completeOrder(remaining, openWhatsAppWindow())
+                  }
                   disabled={loading}
                   className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3 font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60"
                 >
