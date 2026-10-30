@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import { Order } from "@/app/order";
 import { Trash2, Pencil, Banknote, CreditCard } from "lucide-react";
@@ -17,6 +18,7 @@ export default function OrderCard({ order, onUpdate, onEdit }: Props) {
   const [method, setMethod] = useState<"cash" | "card" | null>(null);
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
+  const submitting = useRef(false);
 
   // ================= TOTAL =================
   const total = useMemo(() => {
@@ -73,48 +75,54 @@ ${items}
   };
 
   const completeOrder = async (payAmount: number) => {
-    if (loading) return;
+    // ref, а не state: защита от двойного клика до перерисовки
+    if (submitting.current) return;
+    submitting.current = true;
     setLoading(true);
 
-    if (payAmount > 0) {
-      const { error: payError } = await supabase
-        .from("payments")
-        .insert({ order_id: order.id, amount: payAmount });
+    try {
+      if (payAmount > 0) {
+        const { error: payError } = await supabase
+          .from("payments")
+          .insert({ order_id: order.id, amount: payAmount });
 
-      if (payError) {
-        toast.error("Ошибка при сохранении оплаты");
-        setLoading(false);
+        if (payError) {
+          toast.error("Ошибка при сохранении оплаты");
+          return;
+        }
+      }
+
+      const newPaid = paid + payAmount;
+
+      const { error } = await supabase
+        .from("orders")
+        .update({ is_done: true, paid_amount: newPaid })
+        .eq("id", order.id);
+
+      if (error) {
+        // платёж уже записан, поэтому показываем реальное состояние
+        toast.error("Оплата сохранена, но заказ не закрылся");
+        onUpdate();
         return;
       }
-    }
 
-    const newPaid = paid + payAmount;
+      const left = Math.max(total - newPaid, 0);
 
-    const { error } = await supabase
-      .from("orders")
-      .update({ is_done: true, paid_amount: newPaid })
-      .eq("id", order.id);
+      if (left > 0) {
+        toast(`Заказ закрыт, остаток ${left.toLocaleString()} c`);
+      } else {
+        toast.success("Заказ закрыт и оплачен");
+      }
 
-    if (error) {
-      toast.error("Не удалось завершить заказ");
+      setPayOpen(false);
+      setMethod(null);
+      setAmount("");
+      onUpdate();
+      sendWhatsApp();
+    } finally {
+      submitting.current = false;
       setLoading(false);
-      return;
     }
-
-    const left = Math.max(total - newPaid, 0);
-
-    if (left > 0) {
-      toast(`Заказ закрыт, остаток ${left.toLocaleString()} c`);
-    } else {
-      toast.success("Заказ закрыт и оплачен");
-    }
-
-    sendWhatsApp();
-    setPayOpen(false);
-    setMethod(null);
-    setAmount("");
-    setLoading(false);
-    onUpdate();
   };
 
   const handleCardSubmit = () => {
@@ -128,22 +136,26 @@ ${items}
 
   // ================= REOPEN =================
   const reopenOrder = async () => {
-    if (loading) return;
+    if (submitting.current) return;
+    submitting.current = true;
     setLoading(true);
 
-    const { error } = await supabase
-      .from("orders")
-      .update({ is_done: false })
-      .eq("id", order.id);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ is_done: false })
+        .eq("id", order.id);
 
-    if (error) {
-      toast.error("Не удалось вернуть заказ");
-    } else {
-      toast.success("Заказ возвращён в работу");
-      onUpdate();
+      if (error) {
+        toast.error("Не удалось вернуть заказ");
+      } else {
+        toast.success("Заказ возвращён в работу");
+        onUpdate();
+      }
+    } finally {
+      submitting.current = false;
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   // ================= DELETE =================
@@ -296,9 +308,11 @@ ${items}
         </div>
       </div>
 
-      {/* PAYMENT MODAL */}
-      {payOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      {/* PAYMENT MODAL — портал, иначе карточка с transform ломает fixed */}
+      {payOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
           {/* BACKDROP */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
@@ -410,8 +424,9 @@ ${items}
               </div>
             )}
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </div>
   );
 }
