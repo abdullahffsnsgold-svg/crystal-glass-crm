@@ -12,12 +12,7 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* приложение всегда светлое: тёмная схема ОС ломала контраст текста */
 
 body {
   background: var(--background);

@@ -86,7 +86,9 @@ export default function Home() {
 
   const activeOrders = orders.filter((order) => !order.is_done);
   const doneOrders = orders.filter((order) => order.is_done);
-  const urgentOrders = orders.filter((order) => order.is_urgent);
+  const urgentOrders = orders.filter(
+    (order) => order.is_urgent && !order.is_done,
+  );
 
   const filteredOrders = useMemo(() => {
     const query = search.toLowerCase();
@@ -125,7 +127,7 @@ export default function Home() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 className="ml-2 w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
-                placeholder="Search"
+                placeholder="Имя или телефон"
               />
             </label>
 

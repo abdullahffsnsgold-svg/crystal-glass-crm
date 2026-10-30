@@ -33,7 +33,12 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
     supabase
       .from("glass_types")
       .select("*")
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) {
+          toast.error("Не удалось загрузить типы стекла");
+          return;
+        }
+
         if (data) setGlassTypes(data);
       });
   }, []);
@@ -59,9 +64,17 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
 
     const numValue = typeof value === "string" ? parseFloat(value) || 0 : value;
 
+    // отрицательные значения отсекаем, количество проверяем при отправке
+    const safeValue =
+      field === "quantity"
+        ? Math.max(0, Math.floor(numValue))
+        : field === "width" || field === "height"
+          ? Math.max(0, numValue)
+          : numValue;
+
     newItems[index] = {
       ...newItems[index],
-      [field]: field === "glass_id" ? value : numValue,
+      [field]: field === "glass_id" ? value : safeValue,
     };
 
     newItems[index].price = calculatePrice(
@@ -82,6 +95,12 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
   };
 
   const removeItem = (index: number) => {
+    // заказ без позиций не имеет смысла — оставляем хотя бы одну строку
+    if (items.length === 1) {
+      setItems([{ glass_id: "", width: 0, height: 0, quantity: 1, price: 0 }]);
+      return;
+    }
+
     setItems(items.filter((_, i) => i !== index));
   };
 
@@ -89,6 +108,25 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
     e.preventDefault();
 
     if (loading) return;
+
+    const invalidIndex = items.findIndex(
+      (item) =>
+        !item.glass_id ||
+        item.width <= 0 ||
+        item.height <= 0 ||
+        item.quantity < 1,
+    );
+
+    if (invalidIndex !== -1) {
+      const item = items[invalidIndex];
+      const reason = !item.glass_id
+        ? "выберите тип стекла"
+        : item.width <= 0 || item.height <= 0
+          ? "укажите ширину и высоту"
+          : "укажите количество";
+      toast.error(`Позиция #${invalidIndex + 1}: ${reason}`);
+      return;
+    }
 
     // снимаем данные формы до await: React обнуляет e.currentTarget после обработчика
     const formData = new FormData(e.currentTarget);
@@ -273,6 +311,7 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
                 <div className="grid gap-4 md:grid-cols-6">
                   {/* GLASS TYPE */}
                   <select
+                    value={item.glass_id}
                     className="
             md:col-span-2
             h-12 rounded-2xl border border-slate-300
@@ -297,7 +336,9 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
                   {/* WIDTH */}
                   <input
                     type="number"
+                    min={0}
                     placeholder="Ширина"
+                    value={item.width || ""}
                     className="
             h-12 rounded-2xl border border-slate-300
             px-4 text-slate-900 font-medium
@@ -310,7 +351,9 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
                   {/* HEIGHT */}
                   <input
                     type="number"
+                    min={0}
                     placeholder="Высота"
+                    value={item.height || ""}
                     className="
             h-12 rounded-2xl border border-slate-300
             px-4 text-slate-900 font-medium
@@ -325,6 +368,7 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
                   {/* QTY */}
                   <input
                     type="number"
+                    min={1}
                     value={item.quantity}
                     className="
             h-12 rounded-2xl border border-slate-300

@@ -21,10 +21,11 @@ export default function OrderCard({ order, onUpdate, onEdit }: Props) {
   const submitting = useRef(false);
 
   // ================= TOTAL =================
+  // price в order_items — уже стоимость всей строки (площадь × цена × количество)
   const total = useMemo(() => {
     return (
       order.order_items?.reduce((sum, item) => {
-        return sum + Number(item.price || 0) * Number(item.quantity || 1);
+        return sum + Number(item.price || 0);
       }, 0) || 0
     );
   }, [order.order_items]);
@@ -43,7 +44,7 @@ export default function OrderCard({ order, onUpdate, onEdit }: Props) {
       order.order_items
         ?.map(
           (i) =>
-            `• ${i.glass_type} — ${i.width}×${i.height} (${i.quantity} шт.) = ${Number(i.price) * i.quantity} c`,
+            `• ${i.glass_type} — ${i.width}×${i.height} (${i.quantity} шт.) = ${Number(i.price)} c`,
         )
         .join("\n") || "";
 
@@ -91,29 +92,44 @@ ${items}
     setLoading(true);
 
     try {
+      let paymentId: number | null = null;
+
       if (payAmount > 0) {
-        const { error: payError } = await supabase
+        const { data: payment, error: payError } = await supabase
           .from("payments")
-          .insert({ order_id: order.id, amount: payAmount });
+          .insert({ order_id: order.id, amount: payAmount })
+          .select()
+          .single();
 
         if (payError) {
           waWindow?.close();
           toast.error("Ошибка при сохранении оплаты");
           return;
         }
+
+        paymentId = payment?.id ?? null;
       }
 
       const newPaid = paid + payAmount;
 
       const { error } = await supabase
         .from("orders")
-        .update({ is_done: true, paid_amount: newPaid })
+        .update({
+          is_done: true,
+          paid_amount: newPaid,
+          finished_at: new Date().toISOString(),
+        })
         .eq("id", order.id);
 
       if (error) {
         waWindow?.close();
-        // платёж уже записан, поэтому показываем реальное состояние
-        toast.error("Оплата сохранена, но заказ не закрылся");
+
+        // откатываем платёж, иначе он останется без отражения в заказе
+        if (paymentId !== null) {
+          await supabase.from("payments").delete().eq("id", paymentId);
+        }
+
+        toast.error("Не удалось закрыть заказ, оплата не сохранена");
         onUpdate();
         return;
       }
@@ -143,7 +159,8 @@ ${items}
       return;
     }
 
-    void completeOrder(entered, openWhatsAppWindow());
+    // больше остатка принимать нельзя: paid_amount ушёл бы в переплату
+    void completeOrder(Math.min(entered, remaining), openWhatsAppWindow());
   };
 
   // ================= REOPEN =================
@@ -155,7 +172,7 @@ ${items}
     try {
       const { error } = await supabase
         .from("orders")
-        .update({ is_done: false })
+        .update({ is_done: false, finished_at: null })
         .eq("id", order.id);
 
       if (error) {
@@ -174,16 +191,28 @@ ${items}
   const deleteOrder = async () => {
     const ok = confirm("Удалить заказ?");
     if (!ok) return;
+    if (submitting.current) return;
 
+    submitting.current = true;
     setLoading(true);
 
-    const { error } = await supabase.from("orders").delete().eq("id", order.id);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .delete()
+        .eq("id", order.id);
 
-    if (!error) {
+      if (error) {
+        toast.error("Не удалось удалить заказ");
+        return;
+      }
+
+      toast.success("Заказ удалён");
       onUpdate();
+    } finally {
+      submitting.current = false;
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
@@ -254,7 +283,9 @@ ${items}
         {/* TOTAL */}
         <div className="text-right">
           <p className="text-xs text-slate-400">Итого</p>
-          <p className="text-xl font-black text-blue-600">{total} c</p>
+          <p className="text-xl font-black text-blue-600">
+            {total.toLocaleString()} c
+          </p>
           {order.is_done && remaining > 0 && (
             <p className="text-xs font-semibold text-red-600">
               Долг {remaining.toLocaleString()} c

@@ -52,12 +52,10 @@ export default function DebtsPage() {
     });
 
   const getDebt = (order: DebtOrder): number => {
+    // price в order_items уже включает количество
     const itemsSum =
-      order.order_items?.reduce((sum, item) => {
-        const price = Number(item.price) || 0;
-        const qty = Number(item.quantity) || 1;
-        return sum + price * qty;
-      }, 0) || 0;
+      order.order_items?.reduce((sum, item) => sum + (Number(item.price) || 0), 0) ||
+      0;
 
     const paid = Number(order.paid_amount) || 0;
 
@@ -95,9 +93,11 @@ export default function DebtsPage() {
     paying.current = true;
 
     try {
-      const { error: payError } = await supabase
+      const { data: payment, error: payError } = await supabase
         .from("payments")
-        .insert({ order_id: order.id, amount });
+        .insert({ order_id: order.id, amount })
+        .select()
+        .single();
 
       if (payError) {
         toast.error("Ошибка при сохранении оплаты");
@@ -112,7 +112,12 @@ export default function DebtsPage() {
         .eq("id", order.id);
 
       if (updateError) {
-        toast.error("Оплата сохранена, но заказ не обновился");
+        // откатываем платёж, чтобы суммы в payments и paid_amount не разъехались
+        if (payment?.id) {
+          await supabase.from("payments").delete().eq("id", payment.id);
+        }
+
+        toast.error("Не удалось сохранить оплату");
       } else if (debt - amount <= 0) {
         toast.success("Долг закрыт полностью");
       } else {
@@ -135,8 +140,32 @@ export default function DebtsPage() {
     }
   }, []);
 
+  // оплаты и закрытия заказов могут прийти с другого устройства
+  useEffect(() => {
+    const channel = supabase
+      .channel("debts-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        () => void loadDebts(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "payments" },
+        () => void loadDebts(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const debtors = useMemo(() => {
     return orders.filter((order) => {
+      // долг появляется только после закрытия заказа: активные ещё в работе
+      if (!order.is_done) return false;
+
       const debt = getDebt(order);
       if (debt <= 0) return false;
 
@@ -151,6 +180,13 @@ export default function DebtsPage() {
 
   const totalDebt = useMemo(() => {
     return debtors.reduce((sum, order) => sum + getDebt(order), 0);
+  }, [debtors]);
+
+  // один клиент может иметь несколько долговых заказов — считаем людей, а не заказы
+  const debtorsCount = useMemo(() => {
+    return new Set(
+      debtors.map((order) => order.client_phone || order.client_name || order.id),
+    ).size;
   }, [debtors]);
 
   return (
@@ -191,7 +227,7 @@ export default function DebtsPage() {
               Обновить
             </button>
             <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              <p className="font-semibold">{debtors.length} должников</p>
+              <p className="font-semibold">{debtorsCount} должников</p>
               <p>с активным долгом</p>
             </div>
           </div>
@@ -236,7 +272,7 @@ export default function DebtsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-400">
-                  Заказов в работе
+                  Заказов с долгом
                 </p>
                 <p className="mt-2 text-2xl font-black">{debtors.length}</p>
               </div>

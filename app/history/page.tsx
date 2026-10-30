@@ -48,14 +48,16 @@ export default function HistoryPage() {
     });
 
   const calculateRemaining = (order: HistoryOrder): number => {
+    // price в order_items уже включает количество
     const itemsPriceSum = (order.order_items || []).reduce(
-      (sum, item) =>
-        sum + Number(item.price || 0) * Number(item.quantity || 1),
+      (sum, item) => sum + (Number(item.price) || 0),
       0,
     );
 
     return Math.max(itemsPriceSum - Number(order.paid_amount || 0), 0);
   };
+
+  const closedAt = (order: HistoryOrder) => order.finished_at || order.created_at;
 
   const loadHistory = async () => {
     const { data, error } = await supabase
@@ -80,6 +82,27 @@ export default function HistoryPage() {
     }
   }, []);
 
+  // закрытия и оплаты могут прийти с другого устройства
+  useEffect(() => {
+    const channel = supabase
+      .channel("history-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        () => void loadHistory(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "payments" },
+        () => void loadHistory(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const globalStats = useMemo(() => {
     return orders.reduce(
       (acc, order) => {
@@ -88,7 +111,8 @@ export default function HistoryPage() {
 
         return {
           paid: acc.paid + paid,
-          debt: acc.debt + (remaining > 0 ? remaining : 0),
+          // активные заказы ещё не долг — считаем только закрытые с остатком
+          debt: acc.debt + (order.is_done && remaining > 0 ? remaining : 0),
           completed: acc.completed + (order.is_done ? 1 : 0),
         };
       },
@@ -99,21 +123,26 @@ export default function HistoryPage() {
   const filteredOrders = useMemo(() => {
     const query = searchTerm.toLowerCase();
 
-    return orders.filter((order) => {
-      if (order.is_done !== true) return false;
+    return orders
+      .filter((order) => {
+        if (order.is_done !== true) return false;
 
-      const remaining = calculateRemaining(order);
-      if (remaining > 0) return false;
+        const remaining = calculateRemaining(order);
+        if (remaining > 0) return false;
 
-      const matchesSearch =
-        order.client_name?.toLowerCase().includes(query) ||
-        order.client_phone?.includes(query);
+        const matchesSearch =
+          order.client_name?.toLowerCase().includes(query) ||
+          order.client_phone?.includes(query);
 
-      const matchesDate =
-        !selectedDate || order.created_at?.split("T")[0] === selectedDate;
+        const matchesDate =
+          !selectedDate || closedAt(order)?.split("T")[0] === selectedDate;
 
-      return matchesSearch && matchesDate;
-    });
+        return matchesSearch && matchesDate;
+      })
+      .sort(
+        (a, b) =>
+          new Date(closedAt(b)).getTime() - new Date(closedAt(a)).getTime(),
+      );
   }, [orders, searchTerm, selectedDate]);
 
   return (
