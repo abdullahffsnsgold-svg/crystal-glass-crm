@@ -5,8 +5,10 @@ import { motion } from "framer-motion";
 import { Loader2, Sparkles, Trash2, X } from "lucide-react";
 import { PatternFormat } from "react-number-format";
 import toast from "react-hot-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { getShopId } from "@/lib/shop";
+import { ordersQueryKey, useGlassTypes } from "@/lib/queries";
 
 interface GlassItem {
   glass_id: string;
@@ -16,14 +18,10 @@ interface GlassItem {
   price: number;
 }
 
-interface GlassType {
-  id: number;
-  name: string;
-  price_per_sqm: number;
-}
-
 export default function OrderForm({ onClose }: { onClose: () => void }) {
-  const [glassTypes, setGlassTypes] = useState<GlassType[]>([]);
+  const queryClient = useQueryClient();
+  const { data: glassTypes = [], error: glassError } = useGlassTypes();
+
   const [items, setItems] = useState<GlassItem[]>([
     { glass_id: "", width: 0, height: 0, quantity: 1, price: 0 },
   ]);
@@ -32,18 +30,8 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
   const submitting = useRef(false);
 
   useEffect(() => {
-    supabase
-      .from("glass_types")
-      .select("*")
-      .then(({ data, error }) => {
-        if (error) {
-          toast.error("Не удалось загрузить типы стекла");
-          return;
-        }
-
-        if (data) setGlassTypes(data);
-      });
-  }, []);
+    if (glassError) toast.error("Не удалось загрузить типы стекла");
+  }, [glassError]);
 
   const calculatePrice = (
     glassId: string,
@@ -197,9 +185,10 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
     }
 
     toast.success("Заказ создан");
+    // вместо полной перезагрузки страницы обновляем только список заказов
+    await queryClient.invalidateQueries({ queryKey: ordersQueryKey });
     setLoading(false);
     onClose();
-    window.location.reload();
   };
 
   return (

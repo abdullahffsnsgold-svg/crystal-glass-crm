@@ -16,6 +16,7 @@ import OrderCard from "@/components/OrderCard";
 import SlideOutMenu from "@/components/SlideOutMenu";
 import toast from "react-hot-toast";
 import { plural } from "@/lib/plural";
+import { useOrders, useOrdersLive } from "@/lib/queries";
 import type { Order } from "../order";
 
 interface Payment {
@@ -37,13 +38,21 @@ type DebtOrder = Order & {
 };
 
 export default function DebtsPage() {
-  const [orders, setOrders] = useState<DebtOrder[]>([]);
+  const { data, refetch, error } = useOrders();
+  const orders = useMemo(() => (data ?? []) as DebtOrder[], [data]);
+
   const [search, setSearch] = useState("");
   const [paymentInputs, setPaymentInputs] = useState<Record<number, string>>(
     {},
   ); // Состояние для инпутов
-  const isLoaded = useRef(false);
   const paying = useRef(false);
+
+  // оплаты и закрытия заказов могут прийти с другого устройства
+  useOrdersLive();
+
+  useEffect(() => {
+    if (error) toast.error("Не удалось загрузить долги");
+  }, [error]);
 
   const formatDate = (date: string) =>
     new Date(date).toLocaleDateString("ru-RU", {
@@ -61,23 +70,6 @@ export default function DebtsPage() {
     const paid = Number(order.paid_amount) || 0;
 
     return Math.max(itemsSum - paid, 0);
-  };
-
-  const loadDebts = async () => {
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*, order_items(*), payments(*)")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error(error);
-      toast.error("Не удалось загрузить долги");
-      return;
-    }
-
-    if (data) {
-      setOrders([...data] as DebtOrder[]);
-    }
   };
 
   const handlePayment = async (order: DebtOrder) => {
@@ -133,39 +125,11 @@ export default function DebtsPage() {
         }
       }
 
-      await loadDebts();
+      await refetch();
     } finally {
       paying.current = false;
     }
   };
-
-  useEffect(() => {
-    if (!isLoaded.current) {
-      void loadDebts();
-      isLoaded.current = true;
-    }
-  }, []);
-
-  // оплаты и закрытия заказов могут прийти с другого устройства
-  useEffect(() => {
-    const channel = supabase
-      .channel("debts-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        () => void loadDebts(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "payments" },
-        () => void loadDebts(),
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
 
   // все закрытые заказы с остатком — цифры сверху не должны зависеть от поиска
   const debtorsAll = useMemo(() => {
@@ -231,7 +195,7 @@ export default function DebtsPage() {
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap">
             <button
               type="button"
-              onClick={() => void loadDebts()}
+              onClick={() => void refetch()}
               className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             >
               Обновить
@@ -337,7 +301,7 @@ export default function DebtsPage() {
                   transition={{ delay: index * 0.03 }}
                   className="flex flex-col gap-4"
                 >
-                  <OrderCard order={order} onUpdate={() => void loadDebts()} />
+                  <OrderCard order={order} onUpdate={() => void refetch()} />
 
                   <div className="rounded-[28px] border border-red-100 bg-white/90 p-5 shadow-[0_12px_40px_rgba(15,23,42,0.05)] backdrop-blur">
                     <div className="mb-3 flex items-center justify-between">

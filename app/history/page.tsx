@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -12,8 +12,8 @@ import {
   Sparkles,
   Wallet,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import { plural } from "@/lib/plural";
+import { useOrders, useOrdersLive } from "@/lib/queries";
 import toast from "react-hot-toast";
 import OrderCard from "@/components/OrderCard";
 import SlideOutMenu from "@/components/SlideOutMenu";
@@ -37,10 +37,18 @@ type HistoryOrder = Order & {
 };
 
 export default function HistoryPage() {
-  const [orders, setOrders] = useState<HistoryOrder[]>([]);
+  const { data, refetch, error } = useOrders();
+  const orders = useMemo(() => (data ?? []) as HistoryOrder[], [data]);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
-  const isLoaded = useRef(false);
+
+  // закрытия и оплаты могут прийти с другого устройства
+  useOrdersLive();
+
+  useEffect(() => {
+    if (error) toast.error("Не удалось загрузить историю");
+  }, [error]);
 
   const formatDate = (dateString: string) =>
     new Date(dateString).toLocaleDateString("ru-RU", {
@@ -60,51 +68,6 @@ export default function HistoryPage() {
   };
 
   const closedAt = (order: HistoryOrder) => order.finished_at || order.created_at;
-
-  const loadHistory = async () => {
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*, order_items(*), payments(*)")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Ошибка загрузки истории:", error);
-      toast.error("Не удалось загрузить историю");
-      return;
-    }
-
-    if (data) {
-      setOrders(data as unknown as HistoryOrder[]);
-    }
-  };
-
-  useEffect(() => {
-    if (!isLoaded.current) {
-      void loadHistory();
-      isLoaded.current = true;
-    }
-  }, []);
-
-  // закрытия и оплаты могут прийти с другого устройства
-  useEffect(() => {
-    const channel = supabase
-      .channel("history-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        () => void loadHistory(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "payments" },
-        () => void loadHistory(),
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
 
   const globalStats = useMemo(() => {
     return orders.reduce(
@@ -308,7 +271,7 @@ export default function HistoryPage() {
                   transition={{ delay: index * 0.03 }}
                   className="flex flex-col gap-4"
                 >
-                  <OrderCard order={order} onUpdate={loadHistory} />
+                  <OrderCard order={order} onUpdate={() => void refetch()} />
 
                   <div className="rounded-[28px] border border-slate-200/80 bg-white/90 p-5 shadow-[0_12px_40px_rgba(15,23,42,0.05)] backdrop-blur">
                     <div className="mb-3 flex items-center justify-between">

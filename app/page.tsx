@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ElementType } from "react";
+import { useEffect, useMemo, useState, type ElementType } from "react";
 import { motion } from "framer-motion";
 import { ClipboardList, History, Plus, Search, Wallet } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import OrderCard from "@/components/OrderCard";
 import OrderForm from "@/components/OrderForm";
 import SlideOutMenu from "@/components/SlideOutMenu";
 import toast from "react-hot-toast";
-import type { Order } from "./order";
+import { useOrders, useOrdersLive } from "@/lib/queries";
 
 type StatCardProps = {
   title: string;
@@ -37,54 +36,19 @@ function StatCard({ title, value, icon: Icon, accent }: StatCardProps) {
 }
 
 export default function Home() {
-  const [orders, setOrders] = useState<Order[]>([]);
   const [search, setSearch] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const isFetched = useRef(false);
+  const { data: orders = [], refetch, error, isPending } = useOrders();
+  useOrdersLive(true);
 
-  const loadData = async () => {
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*, order_items(*), payments(*)")
-      // новые заказы сверху: без сортировки порядок строк в ответе произвольный
-      .order("created_at", { ascending: false });
+  useEffect(() => {
+    if (error) toast.error("Ошибка загрузки заказов");
+  }, [error]);
 
-    if (error) {
-      toast.error("Ошибка загрузки заказов");
-      return;
-    }
-
-    setOrders((data ?? []) as Order[]);
+  const reload = () => {
+    void refetch();
   };
-
-  useEffect(() => {
-    if (!isFetched.current) {
-      void loadData();
-      isFetched.current = true;
-    }
-  }, []);
-
-  useEffect(() => {
-    const channel = supabase
-      .channel("orders-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "orders" },
-        (payload) => {
-          void loadData();
-
-          if (payload.eventType === "INSERT") toast.success("Новый заказ");
-          if (payload.eventType === "UPDATE") toast("Обновлено");
-          if (payload.eventType === "DELETE") toast.error("Удалено");
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
 
   const activeOrders = orders.filter((order) => !order.is_done);
   const doneOrders = orders.filter((order) => order.is_done);
@@ -193,7 +157,11 @@ export default function Home() {
           </div>
 
           <div className="mt-6 grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-            {filteredOrders.length > 0 ? (
+            {isPending ? (
+              <div className="rounded-4xl border border-dashed border-slate-300 bg-white/80 p-6 text-center text-slate-500 shadow-sm sm:p-10 md:col-span-2 xl:col-span-3">
+                Загрузка заказов…
+              </div>
+            ) : filteredOrders.length > 0 ? (
               filteredOrders.map((order, index) => (
                 <motion.div
                   key={order.id}
@@ -203,7 +171,7 @@ export default function Home() {
                   whileHover={{ y: -6 }}
                   className="relative"
                 >
-                  <OrderCard order={order} onUpdate={loadData} />
+                  <OrderCard order={order} onUpdate={reload} />
                 </motion.div>
               ))
             ) : (
