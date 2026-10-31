@@ -156,7 +156,7 @@ ${items}
     }
   };
 
-  const handleCardSubmit = () => {
+  const handleAmountSubmit = () => {
     if (!entered || entered <= 0) {
       toast.error("Введите сумму оплаты");
       return;
@@ -398,11 +398,10 @@ ${items}
 
             {method === null && (
               <div className="mt-5 grid gap-3">
+                {/* наличные тоже спрашивают сумму: клиент может внести часть */}
                 <button
                   type="button"
-                  onClick={() =>
-                    void completeOrder(remaining, openWhatsAppWindow())
-                  }
+                  onClick={() => setMethod("cash")}
                   disabled={loading}
                   className="flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3 font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60"
                 >
@@ -430,10 +429,10 @@ ${items}
               </div>
             )}
 
-            {method === "card" && (
+            {method !== null && (
               <div className="mt-5">
                 <label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  Сумма оплаты
+                  {method === "cash" ? "Сумма оплаты наличными" : "Сумма оплаты"}
                 </label>
 
                 <input
@@ -465,7 +464,7 @@ ${items}
 
                   <button
                     type="button"
-                    onClick={handleCardSubmit}
+                    onClick={handleAmountSubmit}
                     disabled={loading}
                     className="flex-1 rounded-2xl bg-black py-3 font-bold text-white hover:bg-slate-800 disabled:opacity-60"
                   >
