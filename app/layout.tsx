@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Toaster } from "react-hot-toast";
 import "./globals.css";
 
@@ -7,6 +7,13 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   title: "Crystal Glass CRM",
   description: "CRM система",
+  icons: { apple: "/icon/icon-192.png" },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({

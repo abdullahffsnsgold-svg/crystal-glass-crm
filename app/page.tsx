@@ -46,7 +46,9 @@ export default function Home() {
   const loadData = async () => {
     const { data, error } = await supabase
       .from("orders")
-      .select("*, order_items(*), payments(*)");
+      .select("*, order_items(*), payments(*)")
+      // новые заказы сверху: без сортировки порядок строк в ответе произвольный
+      .order("created_at", { ascending: false });
 
     if (error) {
       toast.error("Ошибка загрузки заказов");
@@ -102,7 +104,11 @@ export default function Home() {
           (order.client_phone || "").toLowerCase().includes(query)
         );
       })
-      .sort((a, b) => Number(b.is_urgent) - Number(a.is_urgent));
+      .sort(
+        (a, b) =>
+          Number(b.is_urgent) - Number(a.is_urgent) ||
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
   }, [orders, search]);
 
   return (

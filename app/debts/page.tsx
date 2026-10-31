@@ -15,6 +15,7 @@ import { supabase } from "@/lib/supabase";
 import OrderCard from "@/components/OrderCard";
 import SlideOutMenu from "@/components/SlideOutMenu";
 import toast from "react-hot-toast";
+import { plural } from "@/lib/plural";
 import type { Order } from "../order";
 
 interface Payment {
@@ -70,6 +71,7 @@ export default function DebtsPage() {
 
     if (error) {
       console.error(error);
+      toast.error("Не удалось загрузить долги");
       return;
     }
 
@@ -118,15 +120,19 @@ export default function DebtsPage() {
         }
 
         toast.error("Не удалось сохранить оплату");
-      } else if (debt - amount <= 0) {
-        toast.success("Долг закрыт полностью");
       } else {
-        toast.success(
-          `Оплачено ${amount.toLocaleString()} c, остаток ${(debt - amount).toLocaleString()} c`,
-        );
+        // сумму в поле чистим только при успехе, иначе придётся вводить заново
+        setPaymentInputs((prev) => ({ ...prev, [order.id]: "" }));
+
+        if (debt - amount <= 0) {
+          toast.success("Долг закрыт полностью");
+        } else {
+          toast.success(
+            `Оплачено ${amount.toLocaleString()} c, остаток ${(debt - amount).toLocaleString()} c`,
+          );
+        }
       }
 
-      setPaymentInputs((prev) => ({ ...prev, [order.id]: "" }));
       await loadDebts();
     } finally {
       paying.current = false;
@@ -161,33 +167,37 @@ export default function DebtsPage() {
     };
   }, []);
 
-  const debtors = useMemo(() => {
-    return orders.filter((order) => {
+  // все закрытые заказы с остатком — цифры сверху не должны зависеть от поиска
+  const debtorsAll = useMemo(() => {
+    return orders.filter(
       // долг появляется только после закрытия заказа: активные ещё в работе
-      if (!order.is_done) return false;
+      (order) => order.is_done && getDebt(order) > 0,
+    );
+  }, [orders]);
 
-      const debt = getDebt(order);
-      if (debt <= 0) return false;
+  const debtors = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return debtorsAll;
 
-      const q = search.toLowerCase();
-
-      return (
+    return debtorsAll.filter(
+      (order) =>
         order.client_name?.toLowerCase().includes(q) ||
-        order.client_phone?.includes(q)
-      );
-    });
-  }, [orders, search]);
+        order.client_phone?.includes(q),
+    );
+  }, [debtorsAll, search]);
 
   const totalDebt = useMemo(() => {
-    return debtors.reduce((sum, order) => sum + getDebt(order), 0);
-  }, [debtors]);
+    return debtorsAll.reduce((sum, order) => sum + getDebt(order), 0);
+  }, [debtorsAll]);
 
   // один клиент может иметь несколько долговых заказов — считаем людей, а не заказы
   const debtorsCount = useMemo(() => {
     return new Set(
-      debtors.map((order) => order.client_phone || order.client_name || order.id),
+      debtorsAll.map(
+        (order) => order.client_phone || order.client_name || order.id,
+      ),
     ).size;
-  }, [debtors]);
+  }, [debtorsAll]);
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(239,68,68,0.14),transparent_32%),linear-gradient(135deg,#fef8f8_0%,#f8f5f5_45%,#f1f5f9_100%)] px-4 py-6 md:px-8 md:py-10">
@@ -227,7 +237,10 @@ export default function DebtsPage() {
               Обновить
             </button>
             <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              <p className="font-semibold">{debtorsCount} должников</p>
+              <p className="font-semibold">
+                {debtorsCount}{" "}
+                {plural(debtorsCount, "должник", "должника", "должников")}
+              </p>
               <p>с активным долгом</p>
             </div>
           </div>
@@ -274,7 +287,7 @@ export default function DebtsPage() {
                 <p className="text-sm font-medium text-slate-400">
                   Заказов с долгом
                 </p>
-                <p className="mt-2 text-2xl font-black">{debtors.length}</p>
+                <p className="mt-2 text-2xl font-black">{debtorsAll.length}</p>
               </div>
               <div className="rounded-2xl bg-white/10 p-3 text-white">
                 <Sparkles size={20} />
@@ -372,6 +385,7 @@ export default function DebtsPage() {
                       />
                       <button
                         onClick={() => handlePayment(order)}
+                        aria-label="Внести оплату"
                         className="flex items-center justify-center rounded-2xl bg-emerald-600 px-4 text-white hover:bg-emerald-700"
                       >
                         <Plus size={18} />

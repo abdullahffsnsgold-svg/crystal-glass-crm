@@ -36,8 +36,11 @@ export default function OrderCard({ order, onUpdate, onEdit }: Props) {
 
   // ================= WHATSAPP =================
   // окно открываем сразу по клику, иначе после await браузер его блокирует
+  const phoneDigits = (order.client_phone || "").replace(/\D/g, "");
+  const hasPhone = phoneDigits.length >= 9;
+
   const openWhatsAppWindow = (): Window | null =>
-    order.client_phone?.replace(/\D/g, "") ? window.open("", "_blank") : null;
+    hasPhone ? window.open("", "_blank") : null;
 
   const sendWhatsApp = (win: Window | null = null) => {
     const items =
@@ -59,8 +62,8 @@ ${items}
 
 Спасибо за заказ!`;
 
-    let phone = order.client_phone?.replace(/\D/g, "");
-    if (!phone) return;
+    let phone = phoneDigits;
+    if (!hasPhone) return;
 
     if (phone.startsWith("0")) {
       phone = "996" + phone.slice(1);
@@ -336,6 +339,8 @@ ${items}
 
           <button
             onClick={deleteOrder}
+            disabled={loading}
+            aria-label="Удалить заказ"
             className="
               rounded-2xl
               bg-red-50
@@ -344,6 +349,7 @@ ${items}
               text-red-600
               transition
               hover:bg-red-100
+              disabled:opacity-60
             "
           >
             <Trash2 size={16} />

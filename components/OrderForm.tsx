@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Sparkles, Trash2, X } from "lucide-react";
 import { PatternFormat } from "react-number-format";
@@ -28,6 +28,8 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
     { glass_id: "", width: 0, height: 0, quantity: 1, price: 0 },
   ]);
   const [loading, setLoading] = useState(false);
+  // state не успевает обновиться между двумя быстрыми кликами — защищаемся ref
+  const submitting = useRef(false);
 
   useEffect(() => {
     supabase
@@ -107,7 +109,7 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (loading) return;
+    if (loading || submitting.current) return;
 
     const invalidIndex = items.findIndex(
       (item) =>
@@ -131,13 +133,23 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
     // снимаем данные формы до await: React обнуляет e.currentTarget после обработчика
     const formData = new FormData(e.currentTarget);
 
+    submitting.current = true;
     setLoading(true);
+
+    // маска телефона оставляет "+996 (___) __-__-__" — это не номер, а пустое поле
+    const phoneDigits = String(formData.get("client_phone") ?? "").replace(
+      /\D/g,
+      "",
+    );
+    const clientPhone =
+      phoneDigits.length >= 9 ? String(formData.get("client_phone")) : "";
 
     const shopId = await getShopId();
 
     if (!shopId) {
       toast.error("Не удалось определить магазин");
       setLoading(false);
+      submitting.current = false;
       return;
     }
 
@@ -146,9 +158,11 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
       .insert({
         shop_id: shopId,
         client_name: formData.get("client_name"),
-        client_phone: formData.get("client_phone"),
+        client_phone: clientPhone,
         is_urgent: formData.get("is_urgent") === "on",
         comment: formData.get("comment"),
+        // итоговая сумма дублируется в заказе, чтобы отчёты не пересчитывали позиции
+        total_price: items.reduce((sum, i) => sum + (Number(i.price) || 0), 0),
       })
       .select()
       .single();
@@ -156,6 +170,7 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
     if (!order || error) {
       toast.error("Не удалось создать заказ");
       setLoading(false);
+      submitting.current = false;
       return;
     }
 
@@ -177,9 +192,11 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
       await supabase.from("orders").delete().eq("id", order.id);
       toast.error("Не удалось сохранить позиции — заказ не создан");
       setLoading(false);
+      submitting.current = false;
       return;
     }
 
+    toast.success("Заказ создан");
     setLoading(false);
     onClose();
     window.location.reload();
@@ -211,6 +228,7 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={onClose}
+            aria-label="Закрыть форму"
             className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 transition hover:bg-slate-100"
           >
             <X size={20} />
@@ -387,7 +405,7 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
                       <p className="text-xs text-slate-500">Стоимость</p>
 
                       <p className="text-xl font-black text-blue-600">
-                        {item.price} сом
+                        {item.price.toLocaleString()} сом
                       </p>
                     </div>
                   </div>
@@ -430,7 +448,10 @@ export default function OrderForm({ onClose }: { onClose: () => void }) {
               <p className="text-sm text-slate-500">Итоговая сумма</p>
 
               <p className="text-3xl font-black text-slate-900">
-                {items.reduce((sum, i) => sum + i.price, 0)} сом
+                {items
+                  .reduce((sum, i) => sum + i.price, 0)
+                  .toLocaleString()}{" "}
+                сом
               </p>
             </div>
 

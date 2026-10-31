@@ -97,6 +97,7 @@ export default function SlideOutMenu({
                   whileHover={{ rotate: 90, scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={closeMenu}
+                  aria-label="Закрыть меню"
                   className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm"
                   type="button"
                 >

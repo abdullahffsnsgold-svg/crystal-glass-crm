@@ -13,6 +13,8 @@ import {
   Wallet,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { plural } from "@/lib/plural";
+import toast from "react-hot-toast";
 import OrderCard from "@/components/OrderCard";
 import SlideOutMenu from "@/components/SlideOutMenu";
 import type { Order } from "../order";
@@ -67,6 +69,7 @@ export default function HistoryPage() {
 
     if (error) {
       console.error("Ошибка загрузки истории:", error);
+      toast.error("Не удалось загрузить историю");
       return;
     }
 
@@ -175,7 +178,15 @@ export default function HistoryPage() {
           </div>
 
           <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 sm:w-auto">
-            <p className="font-semibold text-slate-900">{filteredOrders.length} закрытых</p>
+            <p className="font-semibold text-slate-900">
+              {filteredOrders.length}{" "}
+              {plural(
+                filteredOrders.length,
+                "закрытый заказ",
+                "закрытых заказа",
+                "закрытых заказов",
+              )}
+            </p>
             <p>по выбранным фильтрам</p>
           </div>
         </div>
@@ -305,7 +316,13 @@ export default function HistoryPage() {
                         История оплат
                       </p>
                       <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                        {sortedPayments.length} платежа
+                        {sortedPayments.length}{" "}
+                        {plural(
+                          sortedPayments.length,
+                          "платёж",
+                          "платежа",
+                          "платежей",
+                        )}
                       </span>
                     </div>
 
